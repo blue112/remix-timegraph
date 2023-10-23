@@ -8,11 +8,6 @@ ARG NODE_VERSION=20.6.1
 # ===
 FROM node:${NODE_VERSION}-slim as base
 
-RUN apt-get update -qq && \
-    apt-get install -y openssl 
-
-LABEL fly_launch_runtime="Remix/Prisma"
-
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -24,17 +19,9 @@ ENV NODE_ENV=production
 # ===
 FROM base as build
 
-# Install packages needed to build node modules
-RUN apt-get update -qq && \
-    apt-get install -y python-is-python3 pkg-config build-essential 
-
 # Install node modules
 COPY --link package.json package-lock.json ./
 RUN npm install --production=false
-
-# Generate Prisma Client
-COPY --link prisma .
-RUN npx prisma generate
 
 # Copy application code
 COPY --link . .
@@ -57,5 +44,7 @@ FROM base
 
 # Copy built application
 COPY --from=build /app /app
+
+EXPOSE 8080
 
 CMD node --max-old-space-size=256 build/server

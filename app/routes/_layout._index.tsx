@@ -109,6 +109,7 @@ export default function Index() {
 
   return (
     <Form method="post" {...form.props} preventScrollReset className="flex flex-col gap-4">
+      {/* <Link to={routerPaths['/graph/:id']({ id: 25 })}>Ceci est un lien</Link> */}
       <div>
         <Label>Data</Label>
         <Textarea
