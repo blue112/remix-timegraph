@@ -1,7 +1,5 @@
 import { json, type LinksFunction, type MetaFunction } from '@remix-run/node'
 import {
-  isRouteErrorResponse,
-  Link,
   Links,
   LiveReload,
   Meta,
@@ -9,10 +7,8 @@ import {
   Scripts,
   ScrollRestoration,
   useLoaderData,
-  useRouteError,
 } from '@remix-run/react'
 import type { PropsWithChildren } from 'react'
-import { routerPaths } from '../routes.ts'
 import tailwindStylesheetUrl from './tailwind.css'
 
 type ENV = {
@@ -79,22 +75,6 @@ function Document({ children }: DocumentProps) {
         <LiveReload />
       </body>
     </html>
-  )
-}
-
-export function ErrorBoundary() {
-  const error = useRouteError()
-
-  return (
-    <Document>
-      <h1 className="text-center">Oops! I did it again</h1>
-
-      {isRouteErrorResponse(error) && <div>Status: {error.status}</div>}
-
-      <Link className="hover:underline" to={routerPaths['/']}>
-        Go back
-      </Link>
-    </Document>
   )
 }
 

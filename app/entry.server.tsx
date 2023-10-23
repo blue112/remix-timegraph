@@ -1,25 +1,12 @@
 import { PassThrough } from 'node:stream'
 
 import type { AppLoadContext, DataFunctionArgs, EntryContext } from '@remix-run/node'
-import { createCookie, createReadableStreamFromReadable } from '@remix-run/node'
+import { createReadableStreamFromReadable } from '@remix-run/node'
 import { RemixServer } from '@remix-run/react'
 import isbot from 'isbot'
 import { renderToPipeableStream } from 'react-dom/server'
-import { COOKIE_NAME, COOKIE_OPTIONS } from './session.server.ts'
 
-const sessionCookie = createCookie(COOKIE_NAME, COOKIE_OPTIONS)
 const ABORT_DELAY = 5_000
-
-async function renewSession(requestHeaders: Headers, responseHeaders: Headers) {
-  const requestCookieValue = await sessionCookie.parse(requestHeaders.get('Cookie'))
-
-  if (requestCookieValue) {
-    const responseCookieValue = await sessionCookie.parse(responseHeaders.get('set-cookie'))
-    if (responseCookieValue == null) {
-      responseHeaders.append('Set-Cookie', await sessionCookie.serialize(requestCookieValue))
-    }
-  }
-}
 
 export default function handleRequest(
   request: Request,
@@ -97,8 +84,6 @@ function handleBrowserRequest(
 
           responseHeaders.set('Content-Type', 'text/html')
 
-          await renewSession(request.headers, responseHeaders)
-
           resolve(
             new Response(stream, {
               headers: responseHeaders,
@@ -125,15 +110,6 @@ function handleBrowserRequest(
 
     setTimeout(abort, ABORT_DELAY)
   })
-}
-
-export async function handleDataRequest(response: Response, { request }: DataFunctionArgs) {
-  /**
-   * @todo: remove the `as unknown as Headers`, without it's currently triggering a ts error when linting
-   */
-  await renewSession(request.headers, response.headers as unknown as Headers)
-
-  return response
 }
 
 export function handleError(error: unknown, { request }: DataFunctionArgs): void {

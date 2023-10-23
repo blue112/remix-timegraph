@@ -1,69 +1,154 @@
-import { Link as RemixLink } from '@remix-run/react'
-import { type PropsWithChildren } from 'react'
-import { routerPaths } from '../../routes.ts'
+import { conform, useForm } from '@conform-to/react'
+import { getFieldsetConstraint, parse } from '@conform-to/zod'
+import { json, type ActionFunctionArgs } from '@remix-run/node'
+import { Form, useActionData } from '@remix-run/react'
+import { fromUnixTime } from 'date-fns'
+import { useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
+import { Field } from '../components/field.tsx'
 import { Button } from '../ui/button.tsx'
-import { Icon } from '../ui/icon.tsx'
-import { Logo } from '../ui/logo.tsx'
+import { Hint } from '../ui/hint.tsx'
+import { Label } from '../ui/label.tsx'
+import { Select } from '../ui/select.tsx'
+import { Textarea } from '../ui/textarea.tsx'
 
-export default function Index() {
-  return (
-    <div className="flex flex-col gap-12 text-center">
-      <div className="flex flex-row items-center justify-center">
-        <Logo />
-        <div className="text-center">
-          <h1 className="text-3xl font-light text-gray-100">
-            <span className="font-bold">Remix</span> Stacks
-          </h1>
+const MAX_UNIXTIME_SECOND = 16980778160
 
-          <RemixLink
-            target="_blank"
-            to="https://github.com/topics/remix-stack"
-            className="text-lg font-semibold text-gray-400 transition hover:brightness-125"
-          >
-            Open Source Template
-          </RemixLink>
-        </div>
-      </div>
-
-      <p className="text-6xl bg-gradient-to-r from-gray-50 to-pink-200 bg-clip-text text-transparent font-bold">
-        Meet UwU-chwan, the only stack you need.
-      </p>
-
-      <div className="flex flex-row justify-center gap-6">
-        <Button
-          as="link"
-          to="https://github.com/heiso/uwu-stack"
-          target="_blank"
-          className="inline-flex gap-2"
-        >
-          <Icon id="github-logo" className="self-center" />
-          GitHub
-        </Button>
-        <Button primary as="link" to={routerPaths['/login']}>
-          Let's twy it !
-        </Button>
-      </div>
-
-      <div className="text-xl">
-        <p>Made with a lowts of gweat technologies !</p>
-        <div className="mt-10 flex flex-row flex-wrap justify-center gap-2">
-          <Techno>Remix</Techno>
-          <Techno>Fly.io</Techno>
-          <Techno>Prisma</Techno>
-          <Techno>Tailwindcss</Techno>
-          <Techno>Typescript</Techno>
-          <Techno>Stripe</Techno>
-          <Techno>Prettier</Techno>
-          <Techno>Docker</Techno>
-          <Techno>Sentry</Techno>
-          <Techno>Lowve</Techno>
-        </div>
-      </div>
-    </div>
-  )
+const DataFormatType = {
+  AVERAGE: 'Moyenne',
+  MEDIAN: 'Médiane',
+  SUM: 'Somme',
 }
 
-type TechnoProps = PropsWithChildren
-function Techno({ children }: TechnoProps) {
-  return <div className="px-2 py-1 backdrop-blur-md rounded-md bg-slate-900">{children}</div>
+const BucketSizeOptionsToCustom: Record<string, string> = {
+  ONE_MINUTE: '1m',
+  ONE_HOUR: '1h',
+  ONE_DAY: '1d',
+  ONE_WEEK: '1w',
+  CUSTOM: '',
+}
+
+const BucketSizeOptions = {
+  ONE_MINUTE: '1 minute',
+  ONE_HOUR: '1 hour',
+  ONE_DAY: '1 day',
+  ONE_WEEK: '1 week',
+  CUSTOM: 'Other...',
+}
+
+const schema = z
+  .object({
+    userData: z.string(),
+    dataFormat: z.enum([Object.keys(DataFormatType)[0], ...Object.keys(DataFormatType).slice(1)]),
+    customBucketSize: z
+      .string()
+      .regex(/^[0-9]{1,3}[mhdwsy]$/i)
+      .optional(),
+    bucketSize: z.enum([
+      Object.keys(BucketSizeOptions)[0],
+      ...Object.keys(BucketSizeOptions).slice(1),
+    ]),
+  })
+  .refine(({ bucketSize, customBucketSize }) => !(bucketSize === 'CUSTOM' && !customBucketSize), {
+    path: ['customBucketSize'],
+    message: 'Custom bucket size invalid',
+  })
+
+function parseTs(date: string) {
+  const ts = Number(date)
+  if (isNaN(ts)) return null
+
+  if (ts > MAX_UNIXTIME_SECOND) return fromUnixTime(ts / 1000)
+
+  return fromUnixTime(ts)
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = await request.formData()
+  const submission = parse(formData, { schema })
+
+  if (!submission.value) {
+    return json(submission)
+  }
+
+  // Parse data
+  const { userData, dataFormat, customBucketSize, bucketSize } = submission.value
+  const parseData = userData
+    .split('\n')
+    .map((line) => {
+      const splitted = line.split(' ')
+      const timestamp = parseTs(splitted[0])
+      const value = Number(splitted[1]?.trim()) || 1
+
+      if (!timestamp) return null
+      return { timestamp, value }
+    })
+    .filter(Boolean) as { timestamp: Date; value: number }[]
+
+  const bucketSizeCustom =
+    bucketSize === 'CUSTOM' ? customBucketSize : BucketSizeOptionsToCustom[bucketSize]
+
+  return json(submission)
+}
+
+export default function Index() {
+  const lastSubmission = useActionData<typeof action>()
+  const [form, fields] = useForm({
+    constraint: getFieldsetConstraint(schema),
+    lastSubmission,
+    shouldValidate: 'onInput',
+  })
+
+  const bucketSizeRef = useRef<HTMLSelectElement>(null)
+  const [showCustom, setShowCustom] = useState(false)
+  useEffect(() => {
+    if (bucketSizeRef.current) {
+      setShowCustom(bucketSizeRef.current?.value === 'CUSTOM')
+    }
+  }, [bucketSizeRef])
+
+  return (
+    <Form method="post" {...form.props} preventScrollReset className="flex flex-col gap-4">
+      <div>
+        <Label>Data</Label>
+        <Textarea
+          error={fields.userData.error}
+          {...conform.input(fields.userData)}
+          cols={50}
+          rows={6}
+        ></Textarea>
+        <Hint error={fields.userData.error}></Hint>
+      </div>
+      <div>
+        <Label>Merge type</Label>
+        <Select error={fields.dataFormat.error} {...conform.input(fields.dataFormat)}>
+          {Object.keys(DataFormatType).map((type) => (
+            <option key={type} value={type}>
+              {DataFormatType[type as keyof typeof DataFormatType]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div>
+        <Label>Bucket size</Label>
+        <Select
+          {...conform.input(fields.bucketSize)}
+          ref={bucketSizeRef}
+          onChange={(event) => {
+            setShowCustom(event.currentTarget.value === 'CUSTOM')
+          }}
+        >
+          {Object.keys(BucketSizeOptions).map((type) => (
+            <option key={type} value={type}>
+              {BucketSizeOptions[type as keyof typeof BucketSizeOptions]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {showCustom && <Field field={fields.customBucketSize} />}
+      <Button type="submit" primary>
+        Process
+      </Button>
+    </Form>
+  )
 }
